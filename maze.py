@@ -57,36 +57,46 @@ class Maze():
         # 起点を1にする
         for xy in self.base_xys:
             self.field[xy[1], xy[0]] = 1
-        
 
         # 全ての起点をランダムな順番で巡回し、
         # 道がなかったら道を作る
         result = 0
-        for j, xy in enumerate(self.base_xys):
+        # for j, xy in enumerate(self.base_xys):
+        road_id = 2 # 
+        while True:
+            idxs = np.where(self.field == 1)
+            num = len(idxs[0])
+            if num is 0:
+                break
+            idx = np.random.randint(0, num)
             # 0: 壁、2以上:通路
-            x = xy[0]
-            y = xy[1]
+            x = idxs[1][idx]
+            y = idxs[0][idx]
             if self.field[y, x] > 1:
                 # すでに通路になっていたら次のポイントへ
                 continue
             
             # x, y を開始点として、自分以外の壁にぶつかるまで
             # 道を伸ばす
-            ret = self._create_road(x, y, id=j + 2)
+            ret = self._create_road(x, y, id=road_id)
+            road_id += 1
             result += (ret == False)
 
         return result
     
     def _create_road(self, x, y, id=2):  # (A)
-        # id 以外の道にぶつかるまで道を伸ばす
-        # id = 2 のときは、進めなくなるまで道を伸ばす
+        # id = 2 のときは、進めなくなるまで道を伸ばして終了
+        # id > 2 のときは、
+        # 自分の id 以外の道につながるまで道を伸ばして終了
+        # つなげられず行き止まりになったら、一つもどって再帰
+        # 
         field = self.field.copy()
         field[y, x] = id
         xy_history = [(x, y)]
         while True:
             # x, y から道を伸ばす
             res, field, x, y = self.find_load_from(field, x, y, id)
-            self.render(field=field, delay=100)
+            self.render(field=field, delay=10)
 
             if res == 'connected':
                 # 別な道につながった場合は終了
@@ -95,18 +105,19 @@ class Maze():
             
             if res == 'stretched':
                 # 道を伸ばした場合は、繰り返す
+                self.field = field
                 xy_history.append((x, y))
                 continue
 
             # 行き止まりに入り込んでしまったら、
             # ループから抜けて行き止まり対策
             if res == 'deadend':
+                self.field = field
                 break
 
             raise ValueError('res が間違っています')
         
         if id == 2:
-            self.field = field
             return True
 
         # 行き止まり対策
@@ -115,6 +126,7 @@ class Maze():
             xy_history.pop(-1)
             if len(xy_history) == 0:
                 # ベースが無くなったら失敗として終了
+                print('ベースの根元までもどりましたがつなげる道が見つかりませんでした。')
                 return False
 
             x, y = xy_history[-1]
@@ -199,7 +211,10 @@ class Maze():
         xys = random.sample(xys, k=len(xys))
         return xys
     
-    def render(self, field=None, is_show=True, delay=0, xy=None):
+    def render(
+        self, field=None, 
+        is_show=True, delay=0, xy=None, isUnicol=False
+        ):
         if field is None:
             val = self.field.copy()
         else:
@@ -221,8 +236,8 @@ class Maze():
         img_b = val.copy()
 
         cols = {
-            0: (0, 0, 0),  # wall
-            1: (0, 200, 0), # base
+            0: (50, 50, 50),  # wall
+            1: (0, 100, 0), # base
             2: (200, 200, 200),  # path
         }
         for v in range(max_val + 1):
@@ -276,7 +291,7 @@ class Maze():
         return lines
 
 if __name__ == '__main__':
-    maze = Maze(size_w=20, size_h=20, unit=10)
+    maze = Maze(size_w=40, size_h=40, unit=10)
     ret = maze.generate_maze()
     maze.render()
     print(maze.field)
