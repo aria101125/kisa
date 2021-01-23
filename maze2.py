@@ -6,9 +6,6 @@
 http://www5d.biglobe.ne.jp/stssk/maze/make.html
 この理論だけだとまだ未完成。
 機能追加して完成
-
-maze2.py
-生成過程を表示できるようにする
 """
 
 import numpy as np
