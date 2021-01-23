@@ -15,8 +15,12 @@ import numpy as np
 import random
 import cv2
 import matplotlib.pyplot as plt
-
+import seaborn as sns
+import sys
 import pdb
+
+
+MAX_COL = 100 # 色の種類の上限
 
 class Maze():
     """
@@ -29,6 +33,7 @@ class Maze():
         self.size_w = size_w
         self.size_h = size_h
         self.unit = unit
+        self.colorpalette = sns.color_palette(n_colors = MAX_COL)
     
     def generate_maze(self):
         """
@@ -43,37 +48,45 @@ class Maze():
         self.n_h = 2 * self.size_h + 1
 
         # 全てを壁で満たす
-        # 0: 壁、1以上:通路
+        # 0: 壁, 1: 基点, 2以上:通路
         self.field = np.zeros((self.n_h, self.n_w), dtype=np.uint8)
-        # import pdb; pdb.set_trace()
+
         # 基点となるセルの座標をランダムな順番でリストに生成
         self.base_xys = self._get_base()
 
+        # 起点を1にする
+        for xy in self.base_xys:
+            self.field[xy[1], xy[0]] = 1
+        
+
+        # 全ての起点をランダムな順番で巡回し、
+        # 道がなかったら道を作る
         result = 0
         for j, xy in enumerate(self.base_xys):
-            # ランダムな順番で一つの基点を決める
-            # 0: 壁、1以上:通路
+            # 0: 壁、2以上:通路
             x = xy[0]
             y = xy[1]
-            if self.field[y, x] > 0:
+            if self.field[y, x] > 1:
                 # すでに通路になっていたら次のポイントへ
                 continue
             
             # x, y を開始点として、自分以外の壁にぶつかるまで
             # 道を伸ばす
-            ret = self._create_road(x, y, id=j + 1)
+            ret = self._create_road(x, y, id=j + 2)
             result += (ret == False)
+
         return result
     
-    def _create_road(self, x, y, id=1):  # (A)
+    def _create_road(self, x, y, id=2):  # (A)
         # id 以外の道にぶつかるまで道を伸ばす
-        # id = 1 のときは、進めなくなるまで道を伸ばす
+        # id = 2 のときは、進めなくなるまで道を伸ばす
         field = self.field.copy()
         field[y, x] = id
         xy_history = [(x, y)]
         while True:
             # x, y から道を伸ばす
             res, field, x, y = self.find_load_from(field, x, y, id)
+            self.render(field=field, delay=100)
 
             if res == 'connected':
                 # 別な道につながった場合は終了
@@ -92,7 +105,7 @@ class Maze():
 
             raise ValueError('res が間違っています')
         
-        if id == 1:
+        if id == 2:
             self.field = field
             return True
 
@@ -101,7 +114,7 @@ class Maze():
             # ベースを一つもどる
             xy_history.pop(-1)
             if len(xy_history) == 0:
-                # ベースが無くなったら異常終了
+                # ベースが無くなったら失敗として終了
                 return False
 
             x, y = xy_history[-1]
@@ -110,12 +123,12 @@ class Maze():
                 return True
 
     def find_load_from(self, field, x, y, id):
-        dd = (
+        dd = [
             (1, 0),
             (-1, 0),
             (0, 1),
             (0, -1),
-        )
+        ]
         next_field = field.copy()
         dd_res = [''] * 4
         for id_dir in range(4):
@@ -133,7 +146,7 @@ class Maze():
                 dd_res[id_dir] = 'out'
                 continue
 
-            if field[y1, x1] == 0:
+            if field[y1, x1] in (0, 1):
                 # 壁
                 dd_res[id_dir] = 'wall'
                 continue
@@ -176,7 +189,6 @@ class Maze():
         next_y = None
         return res, next_field, next_x, next_y
 
-
     def _get_base(self):
         xs = np.arange(1, self.n_w, 2)
         ys = np.arange(1, self.n_h, 2)
@@ -186,28 +198,57 @@ class Maze():
         xys = xys.tolist()
         xys = random.sample(xys, k=len(xys))
         return xys
+    
+    def render(self, field=None, is_show=True, delay=0, xy=None):
+        if field is None:
+            val = self.field.copy()
+        else:
+            val = field
+        
+        if xy is not None:
+            val[xy[1], xy[0]] = 1
 
-    def render(self, is_show=True):
-        val = self.field.copy()
-        val[val != 0] = 1
-        maxv = np.max(val)
-        minv = np.min(val)
-        if maxv - minv > 0:
-            val = (val.astype(float) - minv) / (maxv - minv) * 255
+        max_val = np.max(val)
         val = val.astype(dtype=np.uint8)
-        # val = 255 - val
-        img = cv2.cvtColor(val, cv2.COLOR_GRAY2RGB)
-        img = cv2.resize(
-            img,
+        val = cv2.resize(
+            val,
             dsize=(0, 0),
             fx=self.unit, fy=self.unit,
             interpolation=cv2.INTER_NEAREST,
             )
+        img_r = val.copy()
+        img_g = val.copy()
+        img_b = val.copy()
+
+        cols = {
+            0: (0, 0, 0),  # wall
+            1: (0, 200, 0), # base
+            2: (200, 200, 200),  # path
+        }
+        for v in range(max_val + 1):
+            if v < 2:
+                col = cols[v]
+            else:
+                ic = v % MAX_COL
+                col = np.array(self.colorpalette[ic]) * 255
+            img_r[val == v] = col[0]
+            img_g[val == v] = col[1]
+            img_b[val == v] = col[2]
+
+        h, w = val.shape
+        img = np.zeros((h, w, 3), dtype=np.uint8)
+        img[:, :, 0] = img_b
+        img[:, :, 1] = img_g
+        img[:, :, 2] = img_r
+
         if is_show:
-            # plt.pcolor(val)
-            # plt.show()
             cv2.imshow('img', img)
-            cv2.waitKey(0)
+            INPUT = cv2.waitKey(delay) & 0xFF
+            if INPUT == ord('q'):
+                sys.exit()
+            if INPUT == ord('d'):
+                pdb.set_trace()
+
         return img
 
     def render_str(self, is_show=True):
@@ -235,7 +276,8 @@ class Maze():
         return lines
 
 if __name__ == '__main__':
-    maze = Maze(size_w=40, size_h=20, unit=10)
+    maze = Maze(size_w=20, size_h=20, unit=10)
     ret = maze.generate_maze()
+    maze.render()
+    print(maze.field)
     print('繋がれなかった道の数', ret)
-    mm = maze.render()
