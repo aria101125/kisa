@@ -20,22 +20,23 @@ import sys
 import pdb
 
 
-MAX_COL = 100 # 色の種類の上限
 
 class Maze():
     """
     迷路生成クラス
     """
-    def __init__(self, size_w=10, size_h=5, unit=10):
+    def __init__(self, size_w=10, size_h=5, unit=10, delay=10):
         """
         変数のセット
         """
+        self.max_col = int(size_w / 2)# 色の種類の上限
         self.size_w = size_w
         self.size_h = size_h
         self.unit = unit
-        self.colorpalette = sns.color_palette(n_colors = MAX_COL)
+        self.delay = delay
+        self.colorpalette = sns.color_palette("hls", n_colors = self.max_col)
     
-    def generate_maze(self):
+    def generate_maze(self, is_show=True):
         """
         Returns
         -------
@@ -78,61 +79,54 @@ class Maze():
             
             # x, y を開始点として、自分以外の壁にぶつかるまで
             # 道を伸ばす
-            ret = self._create_road(x, y, id=road_id)
+            ret = self._create_road(x, y, id=road_id, is_show=is_show)
             road_id += 1
             result += (ret == False)
+        
+        field = self.get_maze()
+        
+        return field
 
-        return result
+    def get_maze(self):
+        field = self.field.copy()
+        field[field > 0] = 1
+        return field
     
-    def _create_road(self, x, y, id=2):  # (A)
-        # id = 2 のときは、進めなくなるまで道を伸ばして終了
-        # id > 2 のときは、
-        # 自分の id 以外の道につながるまで道を伸ばして終了
-        # つなげられず行き止まりになったら、一つもどって再帰
+    def _create_road(self, x, y, id=2, is_show=True):  # (A)
+        # 行き止まりになるまで道を伸ばす
+        # ペン先を1つ戻した位置から、 ret = _create_road() で再帰
+        # 道の根元まで全てもどったら終了
         # 
         field = self.field.copy()
-        field[y, x] = id
+        if field[y, x] < 2:
+            field[y, x] = id
         xy_history = [(x, y)]
         while True:
             # x, y から道を伸ばす
-            res, field, x, y = self.find_load_from(field, x, y, id)
-            self.render(field=field, delay=10)
+            res, field, x, y, pre_field = self.find_load_from(field, x, y, id)
+            self.field = field
 
-            if res == 'connected':
-                # 別な道につながった場合は終了
-                self.field = field
-                return True
-            
             if res == 'stretched':
                 # 道を伸ばした場合は、繰り返す
-                self.field = field
+                if is_show is True:
+                    if self.delay > 50:
+                        self.render(field=pre_field, delay=self.delay)
+                    self.render(delay=self.delay)
                 xy_history.append((x, y))
                 continue
 
-            # 行き止まりに入り込んでしまったら、
+            # 行き止まりに来たら
             # ループから抜けて行き止まり対策
             if res == 'deadend':
-                self.field = field
                 break
 
-            raise ValueError('res が間違っています')
-        
-        if id == 2:
-            return True
-
-        # 行き止まり対策
-        while True:
-            # ベースを一つもどる
-            xy_history.pop(-1)
-            if len(xy_history) == 0:
-                # ベースが無くなったら失敗として終了
-                print('ベースの根元までもどりましたがつなげる道が見つかりませんでした。')
-                return False
-
-            x, y = xy_history[-1]
-            ret = self._create_road(x, y, id=id)
-            if ret is True:
-                return True
+        # 履歴を一つずつもどった地点から、行き止まりまで道を伸ばす
+        xy_history.pop(-1)
+        xy_history.reverse()
+        for xy in xy_history:
+            x = xy[0]
+            y = xy[1]
+            self._create_road(x, y, id=id + 1, is_show=is_show)
 
     def find_load_from(self, field, x, y, id):
         dd = [
@@ -142,6 +136,7 @@ class Maze():
             (0, -1),
         ]
         next_field = field.copy()
+        pre_field = field.copy()
         dd_res = [''] * 4
         for id_dir in range(4):
             x1 = x + dd[id_dir][0] * 2
@@ -163,14 +158,10 @@ class Maze():
                 dd_res[id_dir] = 'wall'
                 continue
 
-            if field[y1, x1] == id:
-                # 自分
-                dd_res[id_dir] = 'same_id'
-                continue
+            # 道
+            dd_res[id_dir] = 'same_id'
 
-            # 違うid
-            dd_res[id_dir] = 'diff_id'
-
+        # 壁が周りにあったらそこに道を伸ばしてもどる
         ids_dir = [i for i, x in enumerate(dd_res) if x == 'wall']
         if len(ids_dir) > 0:
             res = 'stretched'
@@ -183,23 +174,16 @@ class Maze():
             next_field[y0, x0] = id
             next_x = x1
             next_y = y1
-            return res, next_field, next_x, next_y
 
-        ids_dir = [i for i, x in enumerate(dd_res) if x == 'diff_id']
-        if len(ids_dir) > 0:
-            res = 'connected'
-            id_dir = random.sample(ids_dir, 1)[0]
-            x0 = x + dd[id_dir][0]
-            y0 = y + dd[id_dir][1]
-            next_field[y0, x0] = id
-            next_x = None
-            next_y = None
-            return res, next_field, next_x, next_y
+            pre_field[y0, x0] = id  # アニメーション用の途中状態
 
+            return res, next_field, next_x, next_y, pre_field
+
+        # 行き止まり
         res = 'deadend'
         next_x = None
         next_y = None
-        return res, next_field, next_x, next_y
+        return res, next_field, next_x, next_y, pre_field
 
     def _get_base(self):
         xs = np.arange(1, self.n_w, 2)
@@ -210,10 +194,16 @@ class Maze():
         xys = xys.tolist()
         xys = random.sample(xys, k=len(xys))
         return xys
-    
-    def render(
+
+
+class Render(object):
+    """
+    画像生成、表示
+    """
+    @staticmethod
+    def draw(
         self, field=None, 
-        is_show=True, delay=0, xy=None, isUnicol=False
+        is_show=True, delay=0, xy=None, unicol=None,
         ):
         if field is None:
             val = self.field.copy()
@@ -235,20 +225,24 @@ class Maze():
         img_g = val.copy()
         img_b = val.copy()
 
-        cols = {
-            0: (50, 50, 50),  # wall
-            1: (0, 100, 0), # base
-            2: (200, 200, 200),  # path
-        }
-        for v in range(max_val + 1):
-            if v < 2:
-                col = cols[v]
-            else:
-                ic = v % MAX_COL
-                col = np.array(self.colorpalette[ic]) * 255
-            img_r[val == v] = col[0]
-            img_g[val == v] = col[1]
-            img_b[val == v] = col[2]
+        if unicol is None:
+            cols = {
+                0: (50, 50, 50),  # wall
+                1: (0, 100, 0), # base
+            }
+            for v in range(max_val + 1):
+                if v < 2:
+                    col = cols[v]
+                else:
+                    ic = v % self.max_col
+                    col = np.array(self.colorpalette[ic]) * 255
+                img_r[val == v] = col[0]
+                img_g[val == v] = col[1]
+                img_b[val == v] = col[2]
+        else:
+            img_r[val > 1] = unicol[0]
+            img_g[val > 1] = unicol[1]
+            img_b[val > 1] = unicol[2]
 
         h, w = val.shape
         img = np.zeros((h, w, 3), dtype=np.uint8)
@@ -261,38 +255,56 @@ class Maze():
             INPUT = cv2.waitKey(delay) & 0xFF
             if INPUT == ord('q'):
                 sys.exit()
-            if INPUT == ord('d'):
-                pdb.set_trace()
 
         return img
 
-    def render_str(self, is_show=True):
-        trans ={
-            0: 'w',
-            1: ' ',
-        }
-        other = 'w'
 
-        h, w = self.field.shape[:2]
-        lines=[]
-        for iy in range(h):
-            line = ''
-            for ix in range(w):
-                if self.field[iy, ix] in trans:
-                    line += trans[self.field[iy, ix]]
-                else:
-                    line += other
-            lines.append(line)
+
+class MazeSolver:
+    def __init__(self, field, start, goal):
+        self.field = field
+        self.start_xy = start
+        self.goal_xy = goal
+        self.xy = self.start_xy
+
+    def solve_maze(self, is_show=False):
+
+        return field
+    
+    def render(self):
+        img = None
+        return img
+    
         
-        if is_show:
-            for l in lines:
-                print(l)
-
-        return lines
-
 if __name__ == '__main__':
-    maze = Maze(size_w=40, size_h=40, unit=10)
-    ret = maze.generate_maze()
-    maze.render()
-    print(maze.field)
-    print('繋がれなかった道の数', ret)
+
+    # ptype = 'anime'
+    ptype = 'solve'
+
+    if ptype == 'anime':
+        ws = [10, 15, 20, 40]
+        hs = [6, 9, 12, 24]
+        us = [40, 27, 20, 10]
+        ds = [100, 50, 10, 1]
+        for w, h, u, d in zip(ws, hs, us, ds):
+            for i in range(1):
+                maze = Maze(size_w=w, size_h=h, unit=u, delay=d)
+                maze.generate_maze()
+                maze.render(delay=1000)
+                maze.render(delay=2000, unicol=(200, 200, 200))
+        maze.render(delay=0, unicol=(200, 200, 200))
+    if ptype == 'solve':
+        w, h, u, d = 10, 6, 40, 100
+        # w, h, u, d = 20, 12, 27, 10
+        maze = Maze(size_w=w, size_h=h, unit=u, delay=d)
+        field = maze.generate_maze(is_show=False)
+        print(field)
+        # maze.render(delay=0, unicol=(200, 200, 200))
+        # maze.render(delay=0)
+
+        solver = MazeSolver(field)
+        field = solver.solve_maze()
+        solver.render(delay=0)
+
+
+
