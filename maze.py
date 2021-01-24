@@ -25,24 +25,23 @@ class Maze():
     """
     迷路生成クラス
     """
-    def __init__(self, size_w=10, size_h=5, unit=10, delay=10):
+    def __init__(self, size_w=10, size_h=5):
         """
         変数のセット
         """
-        self.max_col = int(size_w / 2)# 色の種類の上限
         self.size_w = size_w
         self.size_h = size_h
-        self.unit = unit
-        self.delay = delay
-        self.colorpalette = sns.color_palette("hls", n_colors = self.max_col)
+        self.render = Render(max_col=size_w)
     
-    def generate_maze(self, is_show=True):
+    def generate_maze(self, is_show=True, unit=10, delay=100):
         """
         Returns
         -------
         field: 2d numpuy.array
             生成した迷路
         """
+        self.unit = unit
+        self.delay = delay
 
         # 実際のサイズ
         self.n_w = 2 * self.size_w + 1
@@ -91,7 +90,7 @@ class Maze():
         field = self.field.copy()
         field[field > 0] = 1
         return field
-    
+
     def _create_road(self, x, y, id=2, is_show=True):  # (A)
         # 行き止まりになるまで道を伸ばす
         # ペン先を1つ戻した位置から、 ret = _create_road() で再帰
@@ -110,8 +109,8 @@ class Maze():
                 # 道を伸ばした場合は、繰り返す
                 if is_show is True:
                     if self.delay > 50:
-                        self.render(field=pre_field, delay=self.delay)
-                    self.render(delay=self.delay)
+                        self.render.draw(pre_field, delay=self.delay, unit=self.unit)
+                    self.render.draw(field, delay=self.delay, unit=self.unit)
                 xy_history.append((x, y))
                 continue
 
@@ -196,19 +195,119 @@ class Maze():
         return xys
 
 
-class Render(object):
+class RoadCreater():
+    def _create_road(self, x, y, id=2, is_show=True):  # (A)
+        # 行き止まりになるまで道を伸ばす
+        # ペン先を1つ戻した位置から、 ret = _create_road() で再帰
+        # 道の根元まで全てもどったら終了
+        # 
+        field = self.field.copy()
+        if field[y, x] < 2:
+            field[y, x] = id
+        xy_history = [(x, y)]
+        while True:
+            # x, y から道を伸ばす
+            res, field, x, y, pre_field = self.find_load_from(field, x, y, id)
+            self.field = field
+
+            if res == 'stretched':
+                # 道を伸ばした場合は、繰り返す
+                if is_show is True:
+                    if self.delay > 50:
+                        self.render.draw(pre_field, delay=self.delay, unit=self.unit)
+                    self.render.draw(field, delay=self.delay, unit=self.unit)
+                xy_history.append((x, y))
+                continue
+
+            # 行き止まりに来たら
+            # ループから抜けて行き止まり対策
+            if res == 'deadend':
+                break
+
+        # 履歴を一つずつもどった地点から、行き止まりまで道を伸ばす
+        xy_history.pop(-1)
+        xy_history.reverse()
+        for xy in xy_history:
+            x = xy[0]
+            y = xy[1]
+            self._create_road(x, y, id=id + 1, is_show=is_show)
+
+    def find_load_from(self, field, x, y, id):
+        dd = [
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1),
+        ]
+        next_field = field.copy()
+        pre_field = field.copy()
+        dd_res = [''] * 4
+        for id_dir in range(4):
+            x1 = x + dd[id_dir][0] * 2
+            y1 = y + dd[id_dir][1] * 2
+            x0 = x + dd[id_dir][0]
+            y0 = y + dd[id_dir][1]
+
+            if x1 < 0 or self.n_w <= x1:
+                dd_res[id_dir] = 'out'
+                continue
+
+            if y1 < 0 or self.n_h <= y1:
+                # はみ出したら次の方向を試す
+                dd_res[id_dir] = 'out'
+                continue
+
+            if field[y1, x1] in (0, 1):
+                # 壁
+                dd_res[id_dir] = 'wall'
+                continue
+
+            # 道
+            dd_res[id_dir] = 'same_id'
+
+        # 壁が周りにあったらそこに道を伸ばしてもどる
+        ids_dir = [i for i, x in enumerate(dd_res) if x == 'wall']
+        if len(ids_dir) > 0:
+            res = 'stretched'
+            id_dir = random.sample(ids_dir, 1)[0]
+            x1 = x + dd[id_dir][0] * 2
+            y1 = y + dd[id_dir][1] * 2
+            x0 = x + dd[id_dir][0]
+            y0 = y + dd[id_dir][1]
+            next_field[y1, x1] = id
+            next_field[y0, x0] = id
+            next_x = x1
+            next_y = y1
+
+            pre_field[y0, x0] = id  # アニメーション用の途中状態
+
+            return res, next_field, next_x, next_y, pre_field
+
+        # 行き止まり
+        res = 'deadend'
+        next_x = None
+        next_y = None
+        return res, next_field, next_x, next_y, pre_field
+            
+
+class Render():
     """
     画像生成、表示
     """
-    @staticmethod
+    def __init__(self, max_col=10):
+        self.max_col = max_col # 色の種類の上限
+        self.colorpalette = sns.color_palette(
+            "hls", n_colors = self.max_col,
+            )
+
     def draw(
-        self, field=None, 
+        self,
+        field,
+        unit=10,
         is_show=True, delay=0, xy=None, unicol=None,
         ):
-        if field is None:
-            val = self.field.copy()
-        else:
-            val = field
+
+        val = field
         
         if xy is not None:
             val[xy[1], xy[0]] = 1
@@ -218,7 +317,7 @@ class Render(object):
         val = cv2.resize(
             val,
             dsize=(0, 0),
-            fx=self.unit, fy=self.unit,
+            fx=unit, fy=unit,
             interpolation=cv2.INTER_NEAREST,
             )
         img_r = val.copy()
@@ -240,9 +339,9 @@ class Render(object):
                 img_g[val == v] = col[1]
                 img_b[val == v] = col[2]
         else:
-            img_r[val > 1] = unicol[0]
-            img_g[val > 1] = unicol[1]
-            img_b[val > 1] = unicol[2]
+            img_r[val > 0] = unicol[0]
+            img_g[val > 0] = unicol[1]
+            img_b[val > 0] = unicol[2]
 
         h, w = val.shape
         img = np.zeros((h, w, 3), dtype=np.uint8)
@@ -266,15 +365,16 @@ class MazeSolver:
         self.start_xy = start
         self.goal_xy = goal
         self.xy = self.start_xy
+        self.render = Render(max_col=10)
 
-    def solve_maze(self, is_show=False):
-
-        return field
+    def solve_maze(self, is_show=False, delay=100, unit=10):
+        self.map = self.field.copy()
+        self.render.draw(
+            self.map, is_show=is_show, unit=unit, delay=delay,
+            )
+        return self.map
     
-    def render(self):
-        img = None
-        return img
-    
+   
         
 if __name__ == '__main__':
 
@@ -285,26 +385,34 @@ if __name__ == '__main__':
         ws = [10, 15, 20, 40]
         hs = [6, 9, 12, 24]
         us = [40, 27, 20, 10]
-        ds = [100, 50, 10, 1]
+        ds = [50, 50, 10, 1]
         for w, h, u, d in zip(ws, hs, us, ds):
             for i in range(1):
-                maze = Maze(size_w=w, size_h=h, unit=u, delay=d)
-                maze.generate_maze()
-                maze.render(delay=1000)
-                maze.render(delay=2000, unicol=(200, 200, 200))
-        maze.render(delay=0, unicol=(200, 200, 200))
+                maze = Maze(size_w=w, size_h=h)
+                field = maze.generate_maze(
+                    is_show=True, unit=u, delay=d,
+                    )
+                maze.render.draw(
+                    field, unit=u, delay=2000, unicol=(200, 200, 200),
+                    )
+        maze.render.draw(
+            field, unit=u, delay=0, unicol=(200, 200, 200),
+            )
+        
     if ptype == 'solve':
-        w, h, u, d = 10, 6, 40, 100
+        w, h, u, d = 10, 6, 40, 10
         # w, h, u, d = 20, 12, 27, 10
-        maze = Maze(size_w=w, size_h=h, unit=u, delay=d)
-        field = maze.generate_maze(is_show=False)
+        maze = Maze(size_w=w, size_h=h)
+        field = maze.generate_maze(is_show=True, unit=u, delay=d)
         print(field)
-        # maze.render(delay=0, unicol=(200, 200, 200))
-        # maze.render(delay=0)
+        maze.render.draw(field, unit=u, delay=0, unicol=(200, 200, 200))
 
-        solver = MazeSolver(field)
-        field = solver.solve_maze()
-        solver.render(delay=0)
+        solver = MazeSolver(field, start=(1, 1), goal=(1, 2))
+        map = solver.solve_maze(is_show=True, unit=u, delay=100)
+        print(1)
+        solver.render.draw(map, unit=u, delay=0)
+        print(2)
+
 
 
 
