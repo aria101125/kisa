@@ -1,5 +1,12 @@
 # 迷路生成・迷路解きプログラム
 
+
+![](image/maze.gif)
+
+youtube 動画はこちら
+https://youtu.be/krAe6bm9SFY
+
+
 ## 実行方法
 ```
 > python maze.py
