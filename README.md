@@ -20,6 +20,7 @@ https://youtu.be/krAe6bm9SFY
 
 この方法で、道をさかのぼりし、開始地点までもどったら終了とする。
 
-
-
-
+詳しくは
+[
+    http://itoshi.main.jp/tech/2021/01/25/maze/
+](http://itoshi.main.jp/tech/2021/01/25/maze/)
